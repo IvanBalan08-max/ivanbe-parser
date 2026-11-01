@@ -1,0 +1,58 @@
+name: Проверка Авито
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/check-avito.yml"
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Проверяем доступ к объявлениям
+        run: |
+          python3 - <<'PY'
+          import os
+          import urllib.request
+          from html.parser import HTMLParser
+
+          class Counter(HTMLParser):
+              count = 0
+              def handle_starttag(self, tag, attrs):
+                  if dict(attrs).get("data-marker") == "item":
+                      self.count += 1
+
+          url = (
+              "https://www.avito.ru/all/fototehnika/"
+              "kompaktnye_fotoapparaty-ASgBAgICAUS~A7IX"
+              "?q=фотоаппарат&s=104"
+          )
+          url = urllib.parse.quote(url, safe=":/?=&~")
+          result = []
+          success = False
+          try:
+              request = urllib.request.Request(
+                  url, headers={"User-Agent": "BalanParser/0.1"}
+              )
+              with urllib.request.urlopen(request, timeout=40) as response:
+                  result.append(f"HTTP: {response.status}")
+                  body = response.read(8_000_000).decode("utf-8", "replace")
+              parser = Counter()
+              parser.feed(body)
+              result.append(f"Размер ответа: {len(body)} символов")
+              result.append(f"Карточек объявлений: {parser.count}")
+              success = parser.count > 0
+              if not success:
+                  result.append("Карточки не найдены: нужна дополнительная проверка.")
+          except Exception as error:
+              result.append(f"Ошибка доступа: {error}")
+          report = "\n\n".join(result)
+          print(report)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "w") as file:
+              file.write("# Проверка Авито\n\n" + report)
+          raise SystemExit(0 if success else 1)
+          PY
